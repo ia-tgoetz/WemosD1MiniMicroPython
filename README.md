@@ -31,9 +31,9 @@ Connect your Wemos D1 Mini and identify the COM port (e.g., COM4).
 esptool --port COM4 erase_flash
 ```
 
-### Step A: Erase existing flash
+### Step B: Write new firmware
 ```powershell
-esptool --port COM4 erase_flash
+esptool --port COM4 --baud 460800 write_flash --flash_size=detect 0 ESP8266_GENERIC-20251209-v1.27.0.bin   
 ```
 
 ## 3. Project Structure & Libraries
@@ -46,9 +46,18 @@ Inside your project folder, create the following files:
 ### Adding the MQTT Library
 Run this PowerShell command in the VS Code terminal to create the library folder and download the `umqtt.simple` library automatically:
 
+* The `umqtt` directory needs to be in the same directory as the `.py` files
 ```powershell
-mkdir umqtt
-$code = (Invoke-WebRequest "[https://raw.githubusercontent.com/micropython/micropython-lib/master/micropython/umqtt.simple/umqtt/simple.py](https://raw.githubusercontent.com/micropython/micropython-lib/master/micropython/umqtt.simple/umqtt/simple.py)").Content; Set-Content -Path "umqtt\simple.py" -Value $code
+# 1. Create the folder if it doesn't exist
+if (!(Test-Path "umqtt")) { mkdir umqtt }
+
+# 2. Download umqtt.robust
+$urlRobust = "https://raw.githubusercontent.com/micropython/micropython-lib/master/micropython/umqtt.robust/umqtt/robust.py"
+Invoke-RestMethod -Uri $urlRobust | Out-File -FilePath "umqtt\robust.py" -Encoding utf8
+
+# 3. IMPORTANT: robust.py requires simple.py in the same folder
+$urlSimple = "https://raw.githubusercontent.com/micropython/micropython-lib/master/micropython/umqtt.simple/umqtt/simple.py"
+Invoke-RestMethod -Uri $urlSimple | Out-File -FilePath "umqtt\simple.py" -Encoding utf8
 ```
 
 ## 4. Source Code Implementation
