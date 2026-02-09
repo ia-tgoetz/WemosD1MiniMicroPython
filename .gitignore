@@ -1,0 +1,10 @@
+# Local Configuration Files
+myConfig.py
+pymakr.conf
+
+# VS Code Workspace & Settings
+.vscode/
+*.code-workspace
+
+# MicroPython Firmware Files
+*.bin

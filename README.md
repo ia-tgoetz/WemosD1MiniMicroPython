@@ -138,14 +138,16 @@ import esp  # For ESP8266 specific stats
 import config  # Pulls metadata from config.py
 import ubinascii
 from umqtt.simple import MQTTClient
-
+CLIENT_ID=config.CLIENT_ID
 # MQTT Topics
-TOPIC_PUB = "wemos/{client_id}".format(client_id=config.CLIENT_ID)
+TOPIC_PUB = "wemos/{client_id}".format(client_id=CLIENT_ID)
 TOPIC_SUB_RATE = "wemos/updateRate"
+TOPIC_SUB_ALL = "wemos/+" # Wildcard to listen to all other wemos devices
 
 # LED Setup (Pin 2 is D4 on Wemos D1 Mini)
 led = machine.Pin(2, machine.Pin.OUT)
-
+other_devices_state = {}
+print("Device ID: {}, IP will be: {}".format(CLIENT_ID, config.STATIC_IP))
 # Global variable for dynamic publish rate (in milliseconds)
 publish_delay = 2000 
 
@@ -169,11 +171,11 @@ def get_system_info():
 
 # Callback function to handle incoming MQTT messages
 def sub_cb(topic, msg):
-    global publish_delay
-    print("Received message on {}: {}".format(topic, msg))
-    
+    global publish_delay, other_devices_state
+    # print("Received message on {}: {}".format(topic, msg))
+    topic_str = topic.decode()
     # Check if the message is for our updateRate topic
-    if topic.decode() == TOPIC_SUB_RATE:
+    if topic_str == TOPIC_SUB_RATE:
         try:
             # Decode bytes to string and convert to integer
             new_rate = int(msg.decode().strip())
@@ -186,9 +188,21 @@ def sub_cb(topic, msg):
                 print("Rate {}ms out of safe bounds (100-3600000)".format(new_rate))
         except ValueError:
             print("Invalid rate received: Not a number")
+    elif "wemos/wemos_device" in topic_str and CLIENT_ID not in topic_str:
+        try:
+            sender_id = topic_str.split('/')[-1]
+            payload = ujson.loads(msg.decode())
+            
+            other_devices_state[sender_id] = payload
+            other_devices_state[sender_id]["last_seen_ms"] = utime.ticks_ms()
+            
+            print("Updated state map for peer: {}".format(sender_id))
+
+        except Exception as e:
+            print("Error parsing peer JSON:", e)
 
 def main():
-    global publish_delay
+    global publish_delay, other_devices_state
     
     # Rapid Startup Blink Test
     print("Running startup blink test...")
@@ -204,16 +218,18 @@ def main():
     print("Attempting to connect to MQTT Broker at {}:{}...".format(config.MQTT_BROKER, config.MQTT_PORT))
     
     # Define client and set the callback function
-    client = MQTTClient(config.CLIENT_ID, config.MQTT_BROKER, port=config.MQTT_PORT, keepalive=60)
+    client = MQTTClient(CLIENT_ID, config.MQTT_BROKER, port=config.MQTT_PORT, keepalive=60)
     client.set_callback(sub_cb)
     
     try:
         client.connect()
+        # Subscribe to both control and wildcard peer topics
         client.subscribe(TOPIC_SUB_RATE)
-        led.value(1)  # Solid OFF to indicate successful connection
-        print("Success: Connected and Subscribed to {}".format(TOPIC_SUB_RATE))
+        client.subscribe(TOPIC_SUB_ALL)
+        led.value(1) 
+        print("Connected. Monitoring peers on {}".format(TOPIC_SUB_ALL))
     except Exception as e:
-        print("Error: Connection failed:", e)
+        print("Connection failed:", e)
         utime.sleep(10)
         machine.reset()
 
@@ -235,10 +251,11 @@ def main():
                 uptime_sec = utime.ticks_ms()
 
                 payload = {
-                    "client_id": config.CLIENT_ID,
+                    "client_id": CLIENT_ID,
                     "uptime": uptime_sec,
                     "ip": sta_if.ifconfig()[0],
                     "rate": publish_delay,
+                    "rssi": sta_if.status('rssi'),
                     "stats": {
                         "free_ram": gc.mem_free(),
                         "flash_id": esp.flash_id(),
@@ -254,7 +271,7 @@ def main():
                 utime.sleep_ms(20) # Very brief sleep for visual blip
                 led.value(1)
                 
-                print("Published at {}ms: {}".format(publish_delay, uptime_sec))
+                print("Client: {} Published at {}ms: {}".format(CLIENT_ID,publish_delay, uptime_sec))
                 
                 # Update the timestamp for the next interval
                 last_publish_time = utime.ticks_ms()
@@ -283,3 +300,5 @@ if __name__ == "__main__":
 6. **Reset**: Press the physical **Reset** button on the Wemos D1 Mini to begin.
 
 *** ***For addition devices, change the `STATIC_IP` and `CLIENT_ID` in the `config.py` and repeat Step 5***
+
+
